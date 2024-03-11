@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"sync"
 
 	"github.com/gocolly/colly"
 )
@@ -36,13 +37,14 @@ func main() {
 		log.Fatalf("Invalid JLPT level: %s", *level)
 	}
 
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	allNotes := make([]Note, 0)
 
 	collector := colly.NewCollector(
 		colly.AllowedDomains("jlptsensei.com", "www.jlptsensei.com"),
 	)
 
-	// Register the event handlers outside the loop
 	collector.OnHTML("tbody tr.jl-row", func(element *colly.HTMLElement) {
 		id := element.ChildText("td.jl-td-num")
 		grammar := element.ChildText("td.jl-td-gj a.jl-link")
@@ -58,19 +60,25 @@ func main() {
 			Meaning: meaning,
 		}
 
+		mu.Lock()
 		allNotes = append(allNotes, note)
+		mu.Unlock()
 	})
 
 	collector.OnRequest(func(request *colly.Request) {
 		fmt.Println("Visiting", request.URL.String())
 	})
 
-	// Loop through all pages
 	for i := 1; i <= pages; i++ {
+		wg.Add(1)
 		url := fmt.Sprintf("https://jlptsensei.com/jlpt-%s-grammar-list/page/%d/", *level, i)
-		collector.Visit(url)
+		go func(url string) {
+			defer wg.Done()
+			collector.Visit(url)
+		}(url)
 	}
 
+	wg.Wait()
 	writeJSON(allNotes, *level)
 }
 
