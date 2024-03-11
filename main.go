@@ -11,12 +11,21 @@ import (
 	"github.com/gocolly/colly"
 )
 
+type Example struct {
+	Id       string `json:"id"`
+	Sentence string `json:"sentence"`
+	Reading  string `json:"reading"`
+	Meaning  string `json:"meaning"`
+}
+
 type Note struct {
-	Id      string `json:"id"`
-	Url     string `json:"url"`
-	Grammar string `json:"grammar"`
-	Reading string `json:"reading"`
-	Meaning string `json:"meaning"`
+	Id       string    `json:"id"`
+	Url      string    `json:"url"`
+	Grammar  string    `json:"grammar"`
+	Reading  string    `json:"reading"`
+	Meaning  string    `json:"meaning"`
+	Image    string    `json:"image"`
+	Examples []Example `json:"examples"`
 }
 
 func main() {
@@ -52,30 +61,62 @@ func main() {
 		url := element.ChildAttr("a.jl-link", "href")
 		meaning := element.ChildText("td.jl-td-gm")
 
-		note := Note{
-			Id:      id,
-			Grammar: grammar,
-			Url:     url,
-			Reading: reading,
-			Meaning: meaning,
-		}
+		var image string
+		var examples []Example
 
-		mu.Lock()
-		allNotes = append(allNotes, note)
-		mu.Unlock()
-	})
+		noteCollector := collector.Clone()
 
-	collector.OnRequest(func(request *colly.Request) {
-		fmt.Println("Visiting", request.URL.String())
+		noteCollector.OnHTML("#main-content", func(e *colly.HTMLElement) {
+			image = e.ChildAttr("#header-image", "src")
+
+			exampleCount := 0
+			e.ForEach("div.example-cont", func(_ int, exElement *colly.HTMLElement) {
+				if exampleCount < 3 {
+					exID := exElement.Attr("id")
+					if exID != "" {
+						sentence := exElement.ChildText(".example-main p.jp")
+						reading := exElement.ChildText(".collapse#" + exID + "_ja .alert-success")
+						meaning := exElement.ChildText(".collapse#" + exID + "_en .alert-primary")
+						example := Example{
+							Id:       exID,
+							Sentence: sentence,
+							Reading:  reading,
+							Meaning:  meaning,
+						}
+						examples = append(examples, example)
+						exampleCount++
+					}
+				}
+			})
+		})
+
+		noteCollector.OnRequest(func(request *colly.Request) {
+			fmt.Println("Visiting", request.URL.String())
+		})
+
+		wg.Add(1)
+		go func(url, id, grammar, reading, meaning string) {
+			defer wg.Done()
+			noteCollector.Visit(url)
+			note := Note{
+				Id:       id,
+				Grammar:  grammar,
+				Url:      url,
+				Reading:  reading,
+				Meaning:  meaning,
+				Image:    image,
+				Examples: examples,
+			}
+
+			mu.Lock()
+			allNotes = append(allNotes, note)
+			mu.Unlock()
+		}(url, id, grammar, reading, meaning)
 	})
 
 	for i := 1; i <= pages; i++ {
-		wg.Add(1)
 		url := fmt.Sprintf("https://jlptsensei.com/jlpt-%s-grammar-list/page/%d/", *level, i)
-		go func(url string) {
-			defer wg.Done()
-			collector.Visit(url)
-		}(url)
+		collector.Visit(url)
 	}
 
 	wg.Wait()
