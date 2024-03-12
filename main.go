@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/gocolly/colly"
@@ -30,6 +32,7 @@ type Note struct {
 
 func main() {
 	level := flag.String("level", "N2", "JLPT level (N1, N2, N3, N4, N5)")
+	fileType := flag.String("filetype", "csv", "File type to save (csv or json)")
 	flag.Parse()
 
 	// Mapping of JLPT level to the number of pages to scrape present in jlpt-sensei
@@ -120,7 +123,15 @@ func main() {
 	}
 
 	wg.Wait()
-	writeJSON(allNotes, *level)
+
+	switch strings.ToLower(*fileType) {
+	case "csv":
+		writeCSV(allNotes, *level)
+	case "json":
+		writeJSON(allNotes, *level)
+	default:
+		log.Fatalf("Invalid file type: %s. Only 'csv' or 'json' are supported.", *fileType)
+	}
 }
 
 func writeJSON(data []Note, level string) {
@@ -138,5 +149,48 @@ func writeJSON(data []Note, level string) {
 		log.Println("Unable to encode JSON:", err)
 		return
 	}
+	fmt.Println("Data written to", filename)
+}
+
+func writeCSV(data []Note, level string) {
+	filename := fmt.Sprintf("jlptnotes_%s.csv", level)
+	file, err := os.Create(filename)
+	if err != nil {
+		log.Println("Unable to create the CSV file:", err)
+		return
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	// Write header
+	headers := []string{"Id", "Url", "Grammar", "Reading", "Meaning", "Image",
+		"Example1 ID", "Example1 Sentence", "Example1 Reading", "Example1 Meaning",
+		"Example2 ID", "Example2 Sentence", "Example2 Reading", "Example2 Meaning",
+		"Example3 ID", "Example3 Sentence", "Example3 Reading", "Example3 Meaning",
+	}
+	if err := writer.Write(headers); err != nil {
+		log.Println("Error writing header to CSV:", err)
+		return
+	}
+
+	// Write data
+	for _, note := range data {
+		examples := make([]string, 12)
+		for i, ex := range note.Examples {
+			idx := i * 4
+			examples[idx] = ex.Id
+			examples[idx+1] = ex.Sentence
+			examples[idx+2] = ex.Reading
+			examples[idx+3] = ex.Meaning
+		}
+		record := []string{note.Id, note.Url, note.Grammar, note.Reading, note.Meaning, note.Image}
+		record = append(record, examples...)
+		if err := writer.Write(record); err != nil {
+			log.Println("Error writing record to CSV:", err)
+		}
+	}
+
 	fmt.Println("Data written to", filename)
 }
