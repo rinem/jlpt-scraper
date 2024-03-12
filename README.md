@@ -13,6 +13,7 @@ The scraper allows you to get the grammar points with their basic meaning and al
 
 - Specify JLPT level as flag to get the specific JLPT level grammar points
 - Get the complete list of grammar points for a JLPT level
+- Can save the data in either JSON or CSV format
 
 ## Technologies Used 💻
 Go, Colly
@@ -20,7 +21,7 @@ Go, Colly
 ## Features to add
 - [ ] Update script to get complete data from all levels by default
 - [ ] Update to include scraping Kanji for each level
-- [ ] Support saving in other formats like CSV
+- [X] Support saving in other formats like CSV
 
 ## Author
 
